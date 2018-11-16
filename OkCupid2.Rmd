@@ -1,0 +1,219 @@
+---
+title: "OKCupid"
+output: html_document
+---
+
+NAME: Sonia Cucchi
+
+BADGE: 810540
+
+NICKNAME: sonia_cucchi
+
+TEAM: StatWars
+
+ROUND: 1st
+
+
+### References:
+
+NULL
+
+### Models
+
+* Lasso
+* Treebag
+* RandomForest
+
+### Non-standard R packages
+
+* moments
+
+```{r startup, include = FALSE, message = FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = T, eval=T, message=F, warning=F, error=F, comment=NA, cache=F, R.options=list(width=220))
+```
+
+
+### R code to reproduce the last submission:
+
+```{r}
+# librerie
+library(randomForest)
+library(caret)
+library(glmnet)
+
+# importazione dati
+train1=read.csv("G:/Data Mining/OKCupid/okcupidtrain.csv")
+test1=read.csv("G:/Data Mining/OKCupid/okcupidtest.csv")
+train=train1[,-(21:28)]
+test=test1[,-(21:28)]
+
+# unione test e train (combi)
+a=rep(0,1000)
+test=cbind(test,a)
+names(test)[c(83)]=c("Class")
+combi=rbind(train,test)
+
+#feature engineering
+
+#Education.mod (unione livelli rispetto alla variabile originale)
+education.mod=combi$education
+education.mod=as.character(education.mod)
+
+education.mod[education.mod=="college_university"|education.mod=="graduated_from_college_university"|
+                education.mod=="dropped_out_of_masters_program"|education.mod=="dropped_out_of_ph_d_program"|
+                education.mod=="working_on_masters_program"|education.mod=="working_on_ph_d_program"]="College"
+education.mod[education.mod=="graduated_from_masters_program"|education.mod=="masters_program"]="Master"
+education.mod[education.mod=="graduated_from_ph_d_program"|education.mod=="ph_d_program"]="PHD"
+education.mod[education.mod=="dropped_out_of_college_university" |education.mod=="dropped_out_of_law_school"|
+                education.mod=="dropped_out_of_two_year_college"|education.mod=="graduated_from_high_school"|
+                education.mod=="high_school"|education.mod=="dropped_out_of_space_camp"|
+                education.mod=="working_on_college_university"|education.mod=="working_on_space_camp"|
+                education.mod=="working_on_two_year_college"]="High School"
+education.mod[education.mod=="dropped_out_of_high_school"|education.mod=="working_on_high_school"]="No highschool"
+education.mod[education.mod=="graduated_from_two_year_college"|education.mod=="two_year_college"]="two years college"
+education.mod[education.mod=="graduated_from_med_school"|education.mod=="working_on_med_school"|
+                education.mod=="working_on_law_school"|education.mod=="working_on_law_school"|
+                education.mod=="graduated_from_law_school"|education.mod=="law_school"]="Law/Med School"
+education.mod[education.mod=="graduated_from_space_camp"|education.mod=="space_camp"]="Space Camp"
+
+education.mod=as.factor(education.mod)
+
+#Religion2 (unione livelli rispetto alla variabile originale)
+religion2=combi$religion
+religion2=as.character(religion2)
+religion2[religion2=="agnosticism"|religion2=="atheism"]="atheism/agnosticism"
+religion2[religion2=="catholicism"|religion2=="christianity"]="christians"
+religion2[religion2=="buddhism"|religion2=="hinduism"|religion2=="islam"|religion2=="judaism"|religion2=="other"]="other"
+religion2=as.factor(religion2)
+
+#pets.mod (unione livelli rispetto alla variabile originale)
+pets.mod=combi$pets
+pets.mod=as.character(pets.mod)
+pets.mod[pets.mod=="dislikes_cats"|pets.mod=="dislikes_dogs_and_dislikes_cats"|pets.mod=="dislikes_dogs"]="no_pet_lover"
+pets.mod[pets.mod=="dislikes_dogs_and_has_cats"|pets.mod=="dislikes_dogs_and_likes_cats"|pets.mod=="has_cats"|pets.mod=="has_dogs_and_likes_cats"|pets.mod=="likes_cats"]="cat_lover"
+pets.mod[pets.mod=="has_dogs"|pets.mod=="has_dogs_and_dislikes_cats"|pets.mod=="likes_dogs"|pets.mod=="likes_dogs_and_dislikes_cats"|pets.mod=="likes_dogs_and_has_cats"]="dog_lover"
+pets.mod[pets.mod=="has_dogs_and_has_cats"|pets.mod=="likes_dogs_and_likes_cats"]="cat&dog_lover"
+
+pets.mod=as.factor(pets.mod)
+
+#income.mod (imputazione missing)
+income.classi1=combi$income
+table(income.classi1)
+income.classi=substring(income.classi1,4,1000000L)
+table(income.classi)
+income.classi=as.integer(income.classi)
+summary(income.classi)
+
+income.classi=na.roughfix(income.classi)
+summary(income.classi)
+
+#somma variabili dummy
+#weirdo 
+combi$weirdo=(combi$tech+combi$technology+combi$math+combi$computer+combi$geek+combi$science+combi$electronic+combi$nerdy+combi$ipod+combi$internet+combi$card)
+#intelletual
+combi$intelletual=combi$brain+combi$studying+combi$student+combi$teaching+combi$education1+combi$school
+#business
+combi$business=combi$solving+combi$fixing+combi$matrix+combi$company+combi$board+combi$justice+combi$law+combi$political+combi$adult 
+#4 sport, ovvero dummy temi sportivi
+#combi$sport=combi$skiing+combi$golf+combi$climbing+combi$baseball+combi$health
+#5 familylove, dummy romanticismo
+#combi$familylove=combi$build+combi$romance+combi$lover+combi$loves+combi$kids+combi$loyal
+#6 egocentric, dummy autoreferenziale-stupida
+combi$egocentric=combi$awesome+combi$lol+combi$im+ combi$haha+combi$dont
+#7 crazy, dummy cose non da nerd
+#combi$crazy=combi$singing+combi$artist+ combi$spiritual+combi$tattoos+combi$firefly
+#8 altro, dummy mista
+combi$altro=combi$shawshank+combi$hobbies+ combi$occasionally+combi$guide+combi$lists+ combi$section+combi$recent+combi$animals+
+  combi$native+combi$major+combi$psychology+combi$nyc
+#9 totale, dummy somma di tutte le dummies
+combi$totale=combi$altro+combi$crazy+combi$egocentric+combi$familylove+combi$sport+combi$business+combi$intelletual+combi$weirdo
+#unisco nel combi le nuove variabili
+
+#unisco a combi le nuove variabili
+combi=cbind(combi,education.mod,religion2,pets.mod,income.classi)
+
+#elimino var che non mi interessano
+combi=combi[,-c(24:83)]
+d=c("education","religion","body_type","diet","drinks","drugs","pets","height","orientation","offspring","sign","status","crazy","familylove","sport","income")
+mode(d)
+combi[,d]=NULL
+train=combi[1:4000,]
+test=combi[4001:5000,]
+
+#modelli
+#Random Forest
+ctrl <- trainControl(method = "cv",
+                     number = 10,
+                     classProbs = TRUE,
+                     summaryFunction = twoClassSummary,
+                     sampling = "up"
+)
+
+set.seed(400)
+mtryGrid = data.frame(mtry=c(2,44,87))
+rf=train (Class~ .,
+          data = train, 
+          ntree=500,
+          method = "rf",
+          metric = "ROC",
+          trControl = ctrl,
+          tuneGrid=mtryGrid
+)
+
+#Treebag
+set.seed(400)
+treebag=train(Class ~ ., data = train, 
+              method = "treebag",
+              nbagg = 50,
+              metric = "ROC",
+              trControl = ctrl)
+
+#Lasso
+set.seed(400)
+control <- trainControl(method="repeatedcv",
+                        repeats = 2,
+                        number = 10,
+                        verbose=TRUE,
+                        classProbs = T,
+                        summaryFunction = twoClassSummary, 
+                        sampling="up")
+
+#Scelgo lambda tramite CV
+fit = glm(Class ~ ., train,family="binomial")
+Xraw= model.matrix(fit)
+yraw = train$Class
+set.seed(400)
+cv.lasso <-cv.glmnet(Xraw,yraw, alpha=1, nfolds = 10, grouped=FALSE,family="binomial")
+
+set.seed(400)
+grid.glmnet <- expand.grid(.alpha = 1,.lambda = 0.005146876)
+fit_glmnet <- train(Class~.,data=train,
+                    method = "glmnet",
+                    trControl = control,
+                    metric="ROC",
+                    tuneGrid = grid.glmnet
+                    )
+
+
+#set.seed(400)
+#grid.glmnet <- expand.grid(.alpha = 0,.lambda = 0.118)
+#fit_glmnet <- train(Class~.,data=train ,
+#                    method = "glmnet",
+#                    trControl = control,
+#                    tuneGrid = grid.glmnet,
+#                    metric="ROC"
+#)
+
+#tre previsioni distinte
+a=predict(rf,test,type="prob")[,2]
+b=predict(treebag,test,type="prob")[,2]
+c=predict(fit_glmnet,test,type="prob")[,2]
+
+#previsione finale come media delle tre previsioni distinte
+A=cbind(a,b,c)
+yhat=apply(A,1,mean)
+
+write.table(file="lassolambda 0.00518.txt", yhat, row.names = FALSE, col.names = FALSE)
+
+head(yhat)
+
